@@ -1,43 +1,115 @@
 # 다 맡케팅
 
-소상공인을 위한 AI 마케팅 자동화 플랫폼
+숏츠 제작부터 SNS 게시까지, 생성형 AI로 자동화한 소상공인 마케팅 플랫폼
+**7인 팀** · 2025.07 ~ 2025.09 · KT AIVLE School 7기 빅프로젝트 **대상**
 
-KT AIVLE School 7기 빅프로젝트 **대상(1위)** · 2025.07.07 ~ 2025.09.02 · 7인 팀 (AI/백엔드 5, AI/프론트 2)
+> 이 저장소는 팀 원본 저장소(KT-AIVLE-04)를 포크해 하위 모듈로 묶은 포트폴리오용 저장소입니다.
+> 원본의 협업 기록은 그대로 보존했고, 아래에는 제가 맡은 **SNS 게시글 관리** 기능을 중심으로 정리했습니다.
+
+<br>
+
+## 배경
+
+소상공인은 마케팅에 쓸 인력도 시간도 부족하고, 광고 영상을 외주로 맡기면 비용 부담이 큽니다.
+
+| 기존 대안 | 한계 |
+|---|---|
+| 광고 대행사 | 비용이 높고 소통이 불투명함, 업종에 맞춘 대응 부족 |
+| SNS 광고 툴 | 광고 집행만 가능하고 콘텐츠 제작 기능이 없음 |
+| AI 영상 제작 툴 | 영상 생성만 가능하고 전략 기획·성과 분석은 없음 |
+
+**핵심 문제**: 콘텐츠를 만드는 것과, 채널에 올려 성과를 보는 것이 분리되어 있음
+
+다 맡케팅은 세 기능을 하나의 흐름으로 이었습니다.
+
+1. **숏츠(릴스) 자동 제작**: 시나리오부터 음악·편집까지 완성된 영상 생성
+2. **SNS 게시물 업로드** ← 담당
+3. **성과 분석·리포트**: 반응 수집, 댓글 감성 분석, AI 성과 리포트
+
+<br>
+
+## 내 역할: SNS 게시글 관리
+
+AI가 만든 영상을 불러와 게시글을 쓰고, 여러 플랫폼에 바로 올리는 흐름을 맡았습니다.
+
+| 영역 | 담당 내용 |
+|---|---|
+| **AI** · FastAPI · LangGraph | 게시글 생성 에이전트: 제목·본문·해시태그 생성 |
+| **프론트엔드** · React | 계정 연동, 게시물 작성·업로드, 게시물 관리 화면 |
+
+**사용자 흐름**: ① 콘텐츠 선택 → ② AI 게시글 작성 → ③ 게시 옵션(플랫폼·예약 게시) → ④ 플랫폼별 미리보기
+
+<!-- 스크린샷 추가 위치
+<p align="center">
+  <img src="docs/images/post-flow.png" width="80%" alt="게시글 작성 화면">
+</p>
+-->
+
+<br>
+
+## 게시글 생성 에이전트
+
+### 한 번의 호출 대신, 역할별 노드로 나눔
+
+게시글 생성은 성격이 다른 네 단계라서, LLM을 한 번만 호출하면 단계별 결과를 따로 검증하거나 특정 단계만 다시 실행하기 어렵습니다.
+그래서 LangGraph StateGraph로 역할을 나눴습니다.
+
+```
+START → 콘텐츠 분석 → 트렌드 분석 → 제목·본문 작성 → 해시태그 생성 → END
+```
+
+- **단계마다 모델과 temperature를 다르게**
+
+  | 단계 | 모델 | temperature | 이유 |
+  |---|---|---|---|
+  | 콘텐츠 분석 | gpt-4o-mini | 0.3 | 정형 정보 추출이라 일관성 우선 |
+  | 트렌드 분석 | gpt-4o | 0.7 | 다양한 맥락을 고려한 후보 생성 |
+  | 제목·본문 | gpt-4o-mini | 0.5 | 구조화된 입력이라 경량 모델로 충분 |
+  | 해시태그 | gpt-4o-mini | 0.7 | 다양성이 필요하고, 형식은 후처리로 통제 |
+
+- **해시태그만 다시 만들기**: 노드를 따로 호출할 수 있는 부분 실행 API(`/sns-post/agent/tag`)를 만들어, 사용자가 해시태그만 다시 요청하면 필요한 노드만 실행합니다. **LLM 호출 4회 → 2회**
+
+### '트렌드를 반영해줘' 대신, 맥락과 출력 형식을 정해 줌
+
+- **트렌드 분석**: "트렌드를 반영해줘"만으로는 일반적인 결과가 나와서, 업종·매장 위치·날짜·콘텐츠 요약을 주입하고 8개 범주(시즌·지역·업종 트렌드 등)를 JSON으로 받도록 강제
+- **해시태그**: 플랫폼마다 규칙을 따로 둠. Instagram은 너무 많으면 스팸으로 분류되고, YouTube는 15개를 넘기면 전부 무시되기 때문
+
+  | 플랫폼 | 개수 | 우선순위 |
+  |---|---|---|
+  | Instagram | 7~11개 | 핵심 키워드 → 세분화·타겟 → 인기·브랜드 |
+  | YouTube | 3~5개 | 영상 주제 → 트렌드·빅키워드 → 세분화 |
+  | Facebook | 2~3개 | 캠페인·이벤트 → 개인·커뮤니티 |
+
+<br>
+
+## 돌아보며
+
+- **아쉬운 점**: 출력 형식은 코드로 지켰지만, 생성 결과의 품질과 성공률을 수치로 재는 지표가 없어서 개선 전후를 비교하기 어려웠습니다.
+- **다음에는**: 정답셋과 평가 지표를 먼저 만들어, 모델이나 프롬프트를 바꿀 때마다 품질을 자동 검증하고 실패 원인을 수집해 개선 근거로 쓰겠습니다.
+
+<br>
+
+## 기술 스택
+
+| 구분 | 기술 |
+|---|---|
+| AI | Python, FastAPI, LangChain, LangGraph, OpenAI (gpt-4o, gpt-4o-mini) |
+| Frontend | React, Redux |
+| 팀 전체 | Spring Boot, Spring Cloud Gateway, Kafka, Redis, AWS (S3 · CloudFront · EC2), Docker |
+
+<br>
 
 ## 저장소 구성
 
-이 저장소는 프로젝트 소개용입니다. 코드는 아래 세 저장소에 있으며, 각각 팀 원본 저장소를 브랜치와 커밋 기록까지 그대로 포크한 것입니다.
+| 모듈 | 내용 |
+|---|---|
+| [`backend`](./backend) | Spring Boot 기반 MSA 서비스 |
+| [`backend_ai`](./backend_ai) | FastAPI AI 서버 (게시글 생성 에이전트 포함) |
+| [`frontend`](./frontend) | React 웹 클라이언트 |
 
-| 폴더 | 내용 | 포크 | 원본 |
-|---|---|---|---|
-| `backend_ai/` | FastAPI + LangChain/LangGraph AI 서버 | [damatketing-backend_ai](https://github.com/choiminji-020102/damatketing-backend_ai) | [KT-AIVLE-04/backend_ai](https://github.com/KT-AIVLE-04/backend_ai) |
-| `backend/` | Spring Boot 기반 MSA | [damatketing-backend](https://github.com/choiminji-020102/damatketing-backend) | [KT-AIVLE-04/backend](https://github.com/KT-AIVLE-04/backend) |
-| `frontend/` | React 웹 클라이언트 | [damatketing-frontend](https://github.com/choiminji-020102/damatketing-frontend) | [KT-AIVLE-04/frontend](https://github.com/KT-AIVLE-04/frontend) |
+```bash
+# 하위 모듈까지 함께 받기
+git clone --recurse-submodules https://github.com/choiminji-020102/Da-Matketing.git
+```
 
-## 프로젝트 소개
-
-- 숏폼 광고 영상 자동 생성
-- SNS 게시글 · 해시태그 자동 작성과 YouTube · Instagram · Facebook 게시
-- 댓글 감성 분석 기반 성과 리포트
-
-## 담당 — SNS 게시글 관리 기능의 AI · 프론트
-
-SNS 게시글 관리 기능에서 AI 서버의 게시글 생성 에이전트와 프론트 화면을 맡았습니다.
-
-**AI**
-- LangGraph StateGraph로 콘텐츠 분석 → 트렌드 분석 → 게시글 생성 → 해시태그 생성 4개 노드로 책임 분리
-- 노드별 모델과 temperature 차등 (콘텐츠 분석 gpt-4o-mini 0.3, 트렌드 분석 gpt-4o 0.7, 게시글 생성 gpt-4o-mini 0.5, 해시태그 생성 gpt-4o-mini 0.7)
-- 해시태그만 다시 만드는 API (트렌드 분석과 해시태그 생성 노드만 실행)
-- 플랫폼별 해시태그 개수 규칙 (Instagram 7~11, Facebook 2~3, YouTube 3~5)
-
-**프론트**
-- SNS 계정 연동 페이지 (OAuth 팝업)
-- 콘텐츠 선택 → AI 작성 → 게시 옵션 → 플랫폼별 미리보기 4단계를 한 화면으로 통합
-- 게시물 관리 페이지 (플랫폼 필터, 조회수 · 좋아요 · 댓글, 수정 · 삭제)
-
-## 기술 스택 (프로젝트 전체)
-
-AI: Python, FastAPI, LangChain, LangGraph, OpenAI API
-Backend: Java, Spring Boot, Spring Cloud Gateway, Kafka, Redis
-Frontend: React, Redux
-Infra: AWS (S3, CloudFront, EC2), Docker
+<br>
