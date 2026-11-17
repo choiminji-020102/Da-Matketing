@@ -1,0 +1,12 @@
+[submodule "backend_ai"]
+	path = backend_ai
+	url = https://github.com/choiminji-020102/damatketing-backend_ai.git
+	branch = main
+[submodule "backend"]
+	path = backend
+	url = https://github.com/choiminji-020102/damatketing-backend.git
+	branch = main
+[submodule "frontend"]
+	path = frontend
+	url = https://github.com/choiminji-020102/damatketing-frontend.git
+	branch = main
